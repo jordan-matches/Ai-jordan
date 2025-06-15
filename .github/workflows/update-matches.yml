@@ -2,37 +2,70 @@ name: Update Jordan Matches
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # كل يوم عند منتصف الليل
+    - cron: '0 2 * * *' # كل يوم الساعة 2 صباحًا UTC
   workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Fetch latest Jordan matches
-        run: |
-          mkdir -p data
-          curl -X GET "https://v3.football.api-sports.io/fixtures?team=957&next=10" \
-          -H "x-apisports-key: 620a4dec91560260d2be0585f8f71a6a" \
-          -H "accept: application/json" \
-          | jq '[.response[] | {
-              date: (.fixture.date | split("T")[0]),
-              time: (.fixture.date | split("T")[1] | split("+")[0] | split(".")[0]),
-              home: .teams.home.name,
-              away: .teams.away.name,
-              venue: .fixture.venue.name,
-              type: .league.name,
-              status: .fixture.status.short
-            }]' > matches.json
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
 
-      - name: Commit and push if changes
+      - name: Install dependencies
+        run: npm install axios
+
+      - name: Fetch latest matches
         run: |
-          git config user.name "JordanBot"
-          git config user.email "bot@jordanauto.ai"
+          node <<EOF
+          const fs = require('fs');
+          const axios = require('axios');
+
+          async function updateMatches() {
+            try {
+              const res = await axios.get('https://api-football-v1.p.rapidapi.com/v3/fixtures', {
+                params: { team: 1098, next: 10 },
+                headers: {
+                  'X-RapidAPI-Key': '620a4dec91560260d2be0585f8f71a6a',
+                  'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com'
+                }
+              });
+
+              const matches = res.data.response.map(match => ({
+                date: match.fixture.date.slice(0, 10),
+                time: match.fixture.date.slice(11, 16),
+                home: match.teams.home.name,
+                away: match.teams.away.name,
+                venue: match.fixture.venue.name,
+                type: match.league.name,
+                status: match.fixture.status.short
+              }));
+
+              fs.writeFileSync('matches.json', JSON.stringify(matches, null, 2));
+              console.log('✅ Matches updated!');
+            } catch (err) {
+              console.error('❌ Error fetching matches:', err.message);
+              process.exit(1);
+            }
+          }
+
+          updateMatches();
+          EOF
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git pull origin main --rebase
           git add matches.json
-          git commit -m "⏱ تحديث المباريات تلقائيًا" || echo "No changes"
-          git push
+          git commit -m "✅ Update matches.json automatically"
+          git push origin main
