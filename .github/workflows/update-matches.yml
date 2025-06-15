@@ -1,0 +1,38 @@
+name: Update Jordan Matches
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # كل يوم عند منتصف الليل
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Fetch latest Jordan matches
+        run: |
+          mkdir -p data
+          curl -X GET "https://v3.football.api-sports.io/fixtures?team=957&next=10" \
+          -H "x-apisports-key: 620a4dec91560260d2be0585f8f71a6a" \
+          -H "accept: application/json" \
+          | jq '[.response[] | {
+              date: (.fixture.date | split("T")[0]),
+              time: (.fixture.date | split("T")[1] | split("+")[0] | split(".")[0]),
+              home: .teams.home.name,
+              away: .teams.away.name,
+              venue: .fixture.venue.name,
+              type: .league.name,
+              status: .fixture.status.short
+            }]' > matches.json
+
+      - name: Commit and push if changes
+        run: |
+          git config user.name "JordanBot"
+          git config user.email "bot@jordanauto.ai"
+          git add matches.json
+          git commit -m "⏱ تحديث المباريات تلقائيًا" || echo "No changes"
+          git push
